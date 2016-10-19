@@ -21,7 +21,7 @@ import java.util.logging.Logger;
  * 3. Numbers from the last winning draw has a chance of 5% (1/20) to be in the next winning draw.
  * 4. Numbers from the last two winning draws have a chance of 20% (1/5) to be in the next winning draw.
  * 5. Numbers from the last three winning draws have a chance of 40% to (2/5) be in the next winning draw.
- * 6. Numbers not from the last three winning draws have a change of 80% (4/5) to be in the next winning draw.
+ * 6. Numbers not from the last three winning draws have a chance of 80% (4/5) to be in the next winning draw.
  *
  * Note: all these chances came up from my head after I was watching on the winning numbers for a long period
  * of time. The percentage doesn't mean than number XX will be in the next winning draw with a chance of 80%, but
@@ -45,7 +45,7 @@ import java.util.logging.Logger;
  *
  * NOTE: worst chance number could be changed from 1 to another position value, say 3, so the size of Big Array
  * will be increased by 3. Worst numbers will have 3 numbers in the array, while Best numbers will have 16*3 numbers
- * in the array.
+ * in the array. (not implemented)
  *
  * @note Simulator based on previous lottery draws: http://graphics.latimes.com/powerball-simulator/
  *
