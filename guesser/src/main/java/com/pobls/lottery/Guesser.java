@@ -1,5 +1,6 @@
 package com.pobls.lottery;
 
+import java.io.IOException;
 import java.util.Properties;
 
 /**
@@ -16,7 +17,8 @@ public interface Guesser {
      *
      * @param opts    Options to be used to the guesser
      * @return Guessed numbers
+     * @throws IOException
      */
-    GuessResult guess(Properties opts);
+    GuessResult guess(Properties opts) throws IOException;
 
 }

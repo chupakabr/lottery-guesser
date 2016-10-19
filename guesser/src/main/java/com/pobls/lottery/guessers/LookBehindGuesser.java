@@ -1,9 +1,16 @@
 package com.pobls.lottery.guessers;
 
 import com.pobls.lottery.GuessResult;
-import com.pobls.lottery.Guesser;
+import com.pobls.lottery.util.LogUtil;
+import org.apache.commons.math3.fraction.Fraction;
+import org.apache.commons.math3.fraction.FractionFormat;
 
-import java.util.Properties;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.URL;
+import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -41,6 +48,8 @@ import java.util.logging.Logger;
  * will be increased by 3. Worst numbers will have 3 numbers in the array, while Best numbers will have 16*3 numbers
  * in the array.
  *
+ * @note Simulator based on previous lottery draws: http://graphics.latimes.com/powerball-simulator/
+ *
  * Created by myltik on 18/10/2016.
  */
 public class LookBehindGuesser extends AbstractGuesser {
@@ -53,15 +62,28 @@ public class LookBehindGuesser extends AbstractGuesser {
     //
     // Parameters specific for this Guesser only, see the explanation above.
     //
-    public static final String PARAM_NUM_WORST_BASE     = "number.worst_base";
     public static final String PARAM_CHANCE_10_WORST     = "chance.10";
     public static final String PARAM_CHANCE_20           = "chance.20";
-    public static final String PARAM_CHANCE_30_AVERAGE   = "chance.30";
+    public static final String PARAM_CHANCE_30           = "chance.30";
     public static final String PARAM_CHANCE_40           = "chance.40";
-    public static final String PARAM_CHANCE_50_BEST      = "chance.50";
+    public static final String PARAM_CHANCE_50_AVERAGE   = "chance.50";
+    public static final String PARAM_CHANCE_60           = "chance.60";
+    public static final String PARAM_CHANCE_70           = "chance.70";
+    public static final String PARAM_CHANCE_80           = "chance.80";
+    public static final String PARAM_CHANCE_90_BEST      = "chance.90";
+    public static final String PARAM_WINNING_DRAWS       = "winning_draws";
+    public static final String PARAM_DATA_URL            = "data.url";
+    public static final String PARAM_DATA_START_IDX      = "data.start_idx";
 
     // Logger
     private static final Logger logger = Logger.getLogger(LookBehindGuesser.class.getName());
+
+    // Basically the number of winning draws to consider minus 1.
+    // This number MUST BE less than a number of defined chances. Just for this simple algorithm.
+    private static final int NUMBER_OF_WINNING_DRAWS_TO_CONSIDER = 3;
+
+    // Randomizer coefficient, i.e. how many times the algorithm should warm-up randomizer prior to getting the result
+    private static final int RANDOMIZER_COEFFICIENT = 10;
 
     // Default parameters
     private static final Properties DEFAULTS;
@@ -69,30 +91,194 @@ public class LookBehindGuesser extends AbstractGuesser {
         DEFAULTS = new Properties();
 
         // UK National Lottery CSV URL
-        DEFAULTS.setProperty("data_url", "https://www.national-lottery.co.uk/results/lotto/draw-history/csv");
+        DEFAULTS.setProperty(PARAM_DATA_URL, "https://www.national-lottery.co.uk/results/lotto/draw-history/csv");
+        DEFAULTS.setProperty(PARAM_DATA_START_IDX, "1");
 
         // Number bounds
-        DEFAULTS.setProperty(PARAM_NUM_WORST_BASE, "1");
         DEFAULTS.setProperty(PARAM_NUM_MAX, "59");
         DEFAULTS.setProperty(PARAM_NUM_MIN, "1");
         DEFAULTS.setProperty(PARAM_NUM_COUNT, "6");
 
+        // Winning draws to consider
+        DEFAULTS.setProperty(PARAM_WINNING_DRAWS, "3");
+
         // Chances
-        DEFAULTS.setProperty(PARAM_CHANCE_10_WORST, "1/20");
-        DEFAULTS.setProperty(PARAM_CHANCE_20, "1/5");
-        DEFAULTS.setProperty(PARAM_CHANCE_30_AVERAGE, "2/5");
-        DEFAULTS.setProperty(PARAM_CHANCE_40, "4/5");
-        DEFAULTS.setProperty(PARAM_CHANCE_50_BEST, "4/5");
+        DEFAULTS.setProperty(PARAM_CHANCE_10_WORST,     "1/20");
+        DEFAULTS.setProperty(PARAM_CHANCE_20,           "1/5");
+        DEFAULTS.setProperty(PARAM_CHANCE_30,           "2/5");
+        DEFAULTS.setProperty(PARAM_CHANCE_40,           "4/5");
+        DEFAULTS.setProperty(PARAM_CHANCE_50_AVERAGE,   "4/5");
+        DEFAULTS.setProperty(PARAM_CHANCE_60,           "4/5");
+        DEFAULTS.setProperty(PARAM_CHANCE_70,           "4/5");
+        DEFAULTS.setProperty(PARAM_CHANCE_80,           "4/5");
+        DEFAULTS.setProperty(PARAM_CHANCE_90_BEST,      "4/5");
     }
 
     @Override
-    public GuessResult guess(Properties opts) {
+    public GuessResult guess(Properties opts) throws IOException {
         final Properties mergedOpts = mergeProperties(DEFAULTS, opts);
+        final int winningDrawsToConsider = Integer.valueOf(mergedOpts.getProperty(PARAM_WINNING_DRAWS));
         final GuessResult.Builder builder = new GuessResult.Builder();
-
-        // TODO
-
-
+        builder.add(predictResult(mergedOpts, loadWinningSets(mergedOpts, winningDrawsToConsider)));
         return builder.build();
+    }
+
+    /**
+     * Predict result of the next draw based on the historical data.
+     * @param mergedOpts            Merged options
+     * @param winningSetsHistory    History of winning sets
+     * @return Predicted results based on the algorithm and assumptions described above in this class's comment
+     */
+    private Collection<Integer> predictResult(Properties mergedOpts, final Set<Integer>[] winningSetsHistory) {
+        // Initialize parameters
+        final int maxNum = Integer.valueOf(mergedOpts.getProperty(PARAM_NUM_MAX));
+        final int minNum = Integer.valueOf(mergedOpts.getProperty(PARAM_NUM_MIN));
+        final int numCount = Integer.valueOf(mergedOpts.getProperty(PARAM_NUM_COUNT));
+        final FractionFormat fractionParser = new FractionFormat();
+        final Fraction[] chances = new Fraction[]{
+            fractionParser.parse(mergedOpts.getProperty(PARAM_CHANCE_10_WORST)),
+            fractionParser.parse(mergedOpts.getProperty(PARAM_CHANCE_20)),
+            fractionParser.parse(mergedOpts.getProperty(PARAM_CHANCE_30)),
+            fractionParser.parse(mergedOpts.getProperty(PARAM_CHANCE_40)),
+            fractionParser.parse(mergedOpts.getProperty(PARAM_CHANCE_50_AVERAGE)),
+            fractionParser.parse(mergedOpts.getProperty(PARAM_CHANCE_60)),
+            fractionParser.parse(mergedOpts.getProperty(PARAM_CHANCE_70)),
+            fractionParser.parse(mergedOpts.getProperty(PARAM_CHANCE_80)),
+            fractionParser.parse(mergedOpts.getProperty(PARAM_CHANCE_90_BEST)),
+        };
+
+        // Fill available data array of integers with given probability per number layers
+        final List<Integer> availableNumbers = generateAvailableNumbers(minNum, maxNum, winningSetsHistory, chances);
+
+        // Shuffle available data array randomly for few times
+        for (int i = 0; i < RANDOMIZER_COEFFICIENT; ++i) {
+            Collections.shuffle(availableNumbers);
+        }
+
+        // Run few times to warm up the randomizer. why?:)
+        Random random = new Random();
+        for (int i = 0; i < RANDOMIZER_COEFFICIENT; ++i) {
+            pickUniqueRandomNumbers(random, availableNumbers, numCount);
+        }
+        // Predict next winning match!
+        return pickUniqueRandomNumbers(random, availableNumbers, numCount);
+    }
+
+    /**
+     * Pick some unique random numbers.
+     * @param random              Randomizer
+     * @param availableNumbers    Available numbers spread set with given availability chance
+     * @param numCount            Number of numbers to pick :)
+     * @return Unique randomly picked numbers
+     */
+    private Collection<Integer> pickUniqueRandomNumbers(Random random, List<Integer> availableNumbers, int numCount) {
+        Set<Integer> pickedNumbers = new HashSet<>(numCount);
+
+        int tmpNum;
+        while (numCount-- > 0) {
+            do {
+                tmpNum = random.nextInt(availableNumbers.size());
+            } while (pickedNumbers.contains(availableNumbers.get(tmpNum)));
+
+            pickedNumbers.add(availableNumbers.get(tmpNum));
+        }
+
+        return pickedNumbers;
+    }
+
+    /**
+     * Generate available numbers collection with given chance of appearance.
+     * @param minNum                Minimum possible number
+     * @param maxNum                Maximum possible number
+     * @param winningSetsHistory    History of winning sets
+     * @param chances               Given chances
+     * @return Collection of available numbers given chance of appearance
+     */
+    private List<Integer> generateAvailableNumbers(int minNum, int maxNum, final Set<Integer>[] winningSetsHistory, Fraction[] chances) {
+        // Fill in the map of yet unused numbers, inclusive min and max
+        Set<Integer> unusedNumbers = new HashSet<>(maxNum-minNum+1);
+        for (int i = minNum; i <= maxNum; ++i) {
+            unusedNumbers.add(i);
+        }
+
+        LogUtil.d(logger, "Numbers in the set: " + Arrays.toString(unusedNumbers.toArray()));
+        LogUtil.d(logger, "Numbers count before applying winning sets is " + unusedNumbers.size());
+
+        // First: fill available numbers array based on winning history
+        final List<Integer> availableNumbers = new ArrayList<>(maxNum);
+        final Fraction worstChance = chances[0];
+        for (int iteration = 0; iteration < winningSetsHistory.length; ++iteration) {
+            int inclusionFactor = iteration == 0 ? 1 : getInclusionFactor(chances[iteration], worstChance);
+            LogUtil.d(logger, "  - inclusion factor for #" + iteration + " chance of " + chances[iteration] + " is " + inclusionFactor);
+
+            while (inclusionFactor-- > 0) {
+                availableNumbers.addAll(winningSetsHistory[iteration]);
+            }
+
+            unusedNumbers.removeAll(winningSetsHistory[iteration]);
+        }
+
+        LogUtil.d(logger, "Unused numbers count after applying winning sets is " + unusedNumbers.size());
+
+        // Second: fill available numbers array using all the rest number and the best chance coefficient
+        for (int k = 0; k < getInclusionFactor(chances[chances.length-1], worstChance); ++k) {
+            availableNumbers.addAll(unusedNumbers);
+        }
+
+        LogUtil.d(logger, "Final available numbers array size is " + availableNumbers.size());
+        return availableNumbers;
+    }
+
+    /**
+     * @param currentIterationChance    Current iteration chance
+     * @param worstChance               Worst chance
+     * @return Inclusion factor for specified iteration
+     */
+    private int getInclusionFactor(Fraction currentIterationChance, Fraction worstChance) {
+        return (currentIterationChance.getNumerator() * worstChance.getDenominator())
+                / (worstChance.getNumerator() * currentIterationChance.getDenominator());
+    }
+
+    /**
+     * Load required number of last winning sets from Internet.
+     * @param mergedOpts             Merged options
+     * @param numberOfWinningSets    Number of winning set to load
+     * @return Loaded winnings sets history
+     * @throws IOException
+     */
+    private Set<Integer>[] loadWinningSets(Properties mergedOpts, int numberOfWinningSets) throws IOException {
+        final int dataStartIndex = Integer.valueOf(mergedOpts.getProperty(PARAM_DATA_START_IDX));
+        final int numbersInDraw = Integer.valueOf(mergedOpts.getProperty(PARAM_NUM_COUNT));
+        final Set<Integer>[] winningSets = new HashSet[numberOfWinningSets];
+
+        // Load data from CSV
+        try (InputStream is = new URL(mergedOpts.getProperty(PARAM_DATA_URL)).openConnection().getInputStream();
+             BufferedReader reader = new BufferedReader(new InputStreamReader(is))
+        ) {
+            reader.readLine(); // skip first line as it's CSV header
+            String line;
+            for (int i = 0; i < numberOfWinningSets && (line = reader.readLine()) != null; ++i) {
+                winningSets[i] = parseCsvLine(line, numbersInDraw, dataStartIndex);
+            }
+        }
+
+        return winningSets;
+    }
+
+    /**
+     * @param csvLine           CSV line to get the winning match from
+     * @param numbersInDraw     Numbers in a draw
+     * @param dataStartIndex    An index of the first number in CSV line
+     * @return Parsed winning numbers of specified draw
+     */
+    private Set<Integer> parseCsvLine(String csvLine, int numbersInDraw, int dataStartIndex) {
+        String[] values = csvLine.split(",");
+        final Set<Integer> drawNumbers = new HashSet<>(numbersInDraw);
+
+        for (int i = dataStartIndex, k = 0; i < dataStartIndex+numbersInDraw; ++i, ++k) {
+            drawNumbers.add(Integer.valueOf(values[i]));
+        }
+
+        return drawNumbers;
     }
 }

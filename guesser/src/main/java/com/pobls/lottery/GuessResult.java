@@ -1,6 +1,7 @@
 package com.pobls.lottery;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 
@@ -25,7 +26,7 @@ public class GuessResult {
      */
     public static class Builder {
 
-        private final List<Collection<Integer>> results = new ArrayList<Collection<Integer>>();
+        private final List<Collection<Integer>> results = new ArrayList<>();
 
         /**
          * @param resultSet    Add result set into the holder
@@ -75,5 +76,17 @@ public class GuessResult {
      */
     public int count() {
         return results != null ? results.size() : 0;
+    }
+
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder("[\n");
+        for (int i = 0; i < count(); ++i) {
+            sb.append("\t" + i + ": ");
+            sb.append(Arrays.toString(numbers(i).toArray()));
+            sb.append("\n");
+        }
+        sb.append("]\n");
+        return sb.toString();
     }
 }

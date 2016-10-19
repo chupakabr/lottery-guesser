@@ -1,6 +1,7 @@
 package com.pobls.lottery.guessers;
 
 import com.pobls.lottery.Guesser;
+import com.pobls.lottery.util.LogUtil;
 
 import java.util.Properties;
 import java.util.logging.Level;
@@ -23,13 +24,13 @@ abstract class AbstractGuesser implements Guesser {
     protected Properties mergeProperties(Properties defaults, Properties custom) {
         Properties mergedOpts = (Properties) defaults.clone();
         for (Object key : custom.keySet()) {
-            logger.log(Level.INFO, "Merging property [" + key + "] with value [" + custom.getProperty((String)key) + "]");
+            LogUtil.d(logger, "Merging property [" + key + "] with value [" + custom.getProperty((String)key) + "]");
             mergedOpts.setProperty((String)key, custom.getProperty((String)key));
         }
 
-        logger.log(Level.INFO, "Guesser configuration: ");
+        LogUtil.d(logger, "Guesser configuration: ");
         for (Object key : mergedOpts.keySet()) {
-            logger.log(Level.INFO, "  - [" + key + "] = [" + mergedOpts.getProperty((String)key) + "]");
+            LogUtil.d(logger, "  - [" + key + "] = [" + mergedOpts.getProperty((String)key) + "]");
         }
 
         return mergedOpts;
