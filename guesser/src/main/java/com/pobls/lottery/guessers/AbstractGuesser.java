@@ -4,7 +4,6 @@ import com.pobls.lottery.Guesser;
 import com.pobls.lottery.util.LogUtil;
 
 import java.util.Properties;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
