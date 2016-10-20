@@ -32,20 +32,29 @@ public class Runner {
         // Read Guesser configuration from external properties file
         CommandLineParser cliParser = new DefaultParser();
         Options options = new Options();
-        Option configFile = Option.builder("c")
+        Option configFileOption = Option.builder("c")
                 .hasArg()
                 .desc("configuration file (.properties). See examples in config/ directory.")
                 .argName("properties-file-path")
                 .build();
-        options.addOption(configFile);
-        CommandLine cli = cliParser.parse(options, args);
+        options.addOption(configFileOption);
+        Option numberOfSimulationsOption = Option.builder("n")
+                .hasArg()
+                .desc("number of simulations to be run")
+                .argName("simulations-number")
+                .build();
+        options.addOption(numberOfSimulationsOption);
 
+        CommandLine cli = cliParser.parse(options, args);
         if (!cli.hasOption("c")) {
             HelpFormatter usage = new HelpFormatter();
             usage.printHelp("lottery-guesser", options);
             System.exit(1);
             return;
         }
+
+        // Get simulations number, default is 1
+        int simulationsNumber = Integer.valueOf(cli.getOptionValue("n", "1"));
 
         // Load configuration from the file
         Properties opts = loadPropertiesFile(cli.getOptionValue("c"));
@@ -58,7 +67,7 @@ public class Runner {
 
         // Run the guesser and print 10 results
         Guesser guesser = GuesserFactory.create(opts.getProperty(PARAM_GUESSER_NAME));
-        for (int i = 1; i <= 10; ++i) {
+        for (int i = 1; i <= simulationsNumber; ++i) {
             LogUtil.l(logger, "Result #" + i + ": " + guesser.guess(opts));
         }
     }
